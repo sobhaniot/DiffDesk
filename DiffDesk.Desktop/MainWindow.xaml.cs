@@ -35,6 +35,8 @@ public partial class MainWindow : Window
     private FileSide _selectedFolderSide = FileSide.Left;
     private ScrollViewer? _leftDiffScrollViewer;
     private ScrollViewer? _rightDiffScrollViewer;
+    private ScrollViewer? _leftFolderScrollViewer;
+    private ScrollViewer? _rightFolderScrollViewer;
 
     public MainWindow()
     {
@@ -51,8 +53,12 @@ public partial class MainWindow : Window
     {
         _leftDiffScrollViewer = FindVisualChild<ScrollViewer>(DiffLeftList);
         _rightDiffScrollViewer = FindVisualChild<ScrollViewer>(DiffRightList);
+        _leftFolderScrollViewer = FindVisualChild<ScrollViewer>(ResultsGrid);
+        _rightFolderScrollViewer = FindVisualChild<ScrollViewer>(RightResultsGrid);
         if (_leftDiffScrollViewer is not null) _leftDiffScrollViewer.ScrollChanged += DiffScrollViewer_ScrollChanged;
         if (_rightDiffScrollViewer is not null) _rightDiffScrollViewer.ScrollChanged += DiffScrollViewer_ScrollChanged;
+        if (_leftFolderScrollViewer is not null) _leftFolderScrollViewer.ScrollChanged += FolderScrollViewer_ScrollChanged;
+        if (_rightFolderScrollViewer is not null) _rightFolderScrollViewer.ScrollChanged += FolderScrollViewer_ScrollChanged;
         UpdateThemeButton();
         LeftPathBox.Focus();
     }
@@ -439,6 +445,18 @@ public partial class MainWindow : Window
         _syncingDiffPanes = true;
         target.ScrollToVerticalOffset(source.VerticalOffset);
         _syncingDiffPanes = false;
+    }
+
+    private void FolderScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (_syncingFolderPanes || e.VerticalChange == 0) return;
+        var source = sender as ScrollViewer;
+        var target = ReferenceEquals(source, _leftFolderScrollViewer) ? _rightFolderScrollViewer : _leftFolderScrollViewer;
+        if (source is null || target is null) return;
+
+        _syncingFolderPanes = true;
+        target.ScrollToVerticalOffset(source.VerticalOffset);
+        _syncingFolderPanes = false;
     }
 
     private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject

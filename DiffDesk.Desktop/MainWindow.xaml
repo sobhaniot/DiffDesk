@@ -198,6 +198,7 @@
 
         <Border Grid.Row="0" Background="#FFF7F7F8" BorderBrush="#FFD3D5D9" BorderThickness="0,0,0,1" Padding="10,8">
             <Grid FlowDirection="LeftToRight">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <Grid Grid.Column="0" Margin="0,0,4,0">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -210,6 +211,13 @@
                     <TextBox x:Name="RightPathBox" Grid.Column="0" Height="36" Padding="10,0" FlowDirection="LeftToRight" TextAlignment="Left" VerticalContentAlignment="Center" LostFocus="FolderPath_LostFocus" ToolTip="مسیر پوشهٔ سمت راست" />
                     <Button Grid.Column="1" Content="انتخاب پوشه" Click="BrowseRightButton_Click" MinWidth="104" Margin="6,0,0,0" AutomationProperties.Name="انتخاب پوشهٔ سمت راست" />
                 </Grid>
+                <WrapPanel Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0" HorizontalAlignment="Center" VerticalAlignment="Center" FlowDirection="RightToLeft">
+                    <TextBlock Text="راهنمای رنگ:" Foreground="#FF49505B" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,8,0" />
+                    <Border Background="#FFFFEEEE" BorderBrush="#FFF3C7CC" BorderThickness="1" CornerRadius="6" Padding="8,3" Margin="3,0"><TextBlock Text="فقط در یک سمت" Foreground="#FF8F2634" FontSize="12" /></Border>
+                    <Border Background="#FFF4D7D4" BorderBrush="#FFD9B0CB" BorderThickness="1" CornerRadius="6" Padding="8,3" Margin="3,0"><TextBlock Text="پوشهٔ دارای تفاوت" Foreground="#FF7A2E6F" FontSize="12" /></Border>
+                    <Border Background="#FFD65B9F" BorderBrush="#FFB34A88" BorderThickness="1" CornerRadius="6" Padding="8,3" Margin="3,0"><TextBlock Text="نسخهٔ جدیدتر فایل" Foreground="#FF1A0F2E" FontSize="12" /></Border>
+                    <Border Background="#FFE8F3EB" BorderBrush="#FFC4DDCB" BorderThickness="1" CornerRadius="6" Padding="8,3" Margin="3,0"><TextBlock Text="مورد انتخاب‌شده" Foreground="#FF28543A" FontSize="12" /></Border>
+                </WrapPanel>
             </Grid>
         </Border>
 
