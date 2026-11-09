@@ -275,7 +275,7 @@ public partial class MainWindow : Window
             }
 
             StatusText.Text = "در حال بررسی سابقهٔ تغییرات فایل‌ها…";
-            snapshot = await _fileChangeHistory.TrackAsync(snapshot, _operationCancellation.Token);
+            snapshot = await _fileChangeHistory.TrackAsync(snapshot, _operationCancellation.Token, progress);
             stopwatch.Stop();
             _allRows = snapshot.Rows.ToList();
             _rowsByPath = _allRows.ToDictionary(row => row.RelativePath, StringComparer.OrdinalIgnoreCase);
@@ -284,20 +284,18 @@ public partial class MainWindow : Window
             CountsText.Text = $"{snapshot.Rows.Count:N0} مورد  ·  {snapshot.DifferentCount:N0} تفاوت  ·  {snapshot.IdenticalCount:N0} یکسان";
             var conflictCount = snapshot.Rows.Count(row => row.BothVersionsChanged);
             if (conflictCount > 0) CountsText.Text += $"  ·  ⚠ {conflictCount:N0} مورد با تغییر در هر دو نسخه";
+            if (snapshot.Issues.Count > 0) CountsText.Text += $"  ·  ⚠ {snapshot.Issues.Count:N0} مورد برای بررسی";
             DurationText.Text = $"{stopwatch.Elapsed.TotalSeconds:0.00} ثانیه";
             StatusText.Text = snapshot.Issues.Count == 0 ? "مقایسه کامل شد" : $"مقایسه کامل شد · {snapshot.Issues.Count:N0} مورد نیازمند بررسی";
+            StatusText.ToolTip = snapshot.Issues.Count == 0
+                ? null
+                : string.Join(Environment.NewLine, snapshot.Issues.Take(12));
             SaveRecentSession();
 
             if (_mode == ComparisonMode.Files && ResultsGrid.Items.Count > 0)
             {
                 ResultsGrid.SelectedIndex = 0;
                 ResultsGrid.ScrollIntoView(ResultsGrid.SelectedItem);
-            }
-            if (snapshot.Issues.Count > 0)
-            {
-                var issueSummary = string.Join(Environment.NewLine, snapshot.Issues.Take(4));
-                if (snapshot.Issues.Count > 4) issueSummary += Environment.NewLine + $"و {snapshot.Issues.Count - 4:N0} مورد دیگر…";
-                MessageBox.Show(this, issueSummary, "برخی مسیرها قابل خواندن نبودند", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
         catch (OperationCanceledException)

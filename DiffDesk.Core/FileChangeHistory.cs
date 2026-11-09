@@ -9,12 +9,17 @@ public sealed class FileChangeHistory(string dataDirectory)
 
     private readonly string _historyPath = Path.Combine(dataDirectory, "file-change-history.json");
 
-    public async Task<ComparisonSnapshot> TrackAsync(ComparisonSnapshot snapshot, CancellationToken cancellationToken = default)
+    public async Task<ComparisonSnapshot> TrackAsync(
+        ComparisonSnapshot snapshot,
+        CancellationToken cancellationToken = default,
+        IProgress<ComparisonProgress>? progress = null)
     {
         var history = await LoadAsync(cancellationToken).ConfigureAwait(false);
         var rows = snapshot.Rows.ToArray();
         var issues = snapshot.Issues.ToList();
         var updated = false;
+        var trackableCount = rows.Count(row => !row.IsDirectory && row.LeftPath is not null && row.RightPath is not null);
+        var completed = 0;
         for (var index = 0; index < rows.Length; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -55,6 +60,10 @@ public sealed class FileChangeHistory(string dataDirectory)
                 rows[index] = row with { ContentHistoryChecked = true };
                 issues.Add($"{row.RelativePath} — بررسی سابقهٔ فایل ممکن نبود: {exception.Message}");
             }
+
+            completed++;
+            if (completed % 16 == 0 || completed == trackableCount)
+                progress?.Report(new ComparisonProgress(completed, trackableCount, row.RelativePath, "بررسی سابقهٔ فایل‌ها"));
         }
 
         if (updated)
@@ -145,7 +154,7 @@ public sealed class FileChangeHistory(string dataDirectory)
 
     private static async Task<string> FingerprintAsync(string path, CancellationToken cancellationToken)
     {
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 65536, FileOptions.Asynchronous | FileOptions.SequentialScan);
         return Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false));
     }
 }
