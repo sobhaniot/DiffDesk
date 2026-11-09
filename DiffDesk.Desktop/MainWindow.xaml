@@ -1,0 +1,335 @@
+<Window x:Class="DiffDesk.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:DiffDesk.Desktop"
+        Title="DiffDesk | مقایسهٔ فایل و پوشه"
+        Height="920" Width="1540" MinHeight="720" MinWidth="1120"
+        WindowStartupLocation="CenterScreen"
+        Icon="/DiffDesk;component/Assets/DiffDesk.ico"
+        Background="{DynamicResource AppBackground}"
+        Foreground="{DynamicResource TextBrush}"
+        FontFamily="Segoe UI Variable Text, Segoe UI"
+        FlowDirection="LeftToRight"
+        PreviewKeyDown="Window_PreviewKeyDown"
+        Loaded="Window_Loaded"
+        Closing="Window_Closing">
+    <Window.Resources>
+        <local:TreeDepthIndentConverter x:Key="TreeDepthIndentConverter" />
+        <Style x:Key="TreeDisclosureButton" TargetType="Button">
+            <Setter Property="Width" Value="16" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,0,2,0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#FF5A5360" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Content" Value=" " />
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="DisclosureChrome" Background="{TemplateBinding Background}" CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="DisclosureChrome" Property="Background" Value="#FFE9E1EB"/><Setter Property="Foreground" Value="#FF7A2E6F"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="DisclosureChrome" Property="Background" Value="#FFDCC7DB"/></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0"/></Trigger>
+                            <DataTrigger Binding="{Binding HasChildren}" Value="True"><Setter Property="Content" Value="▸"/><Setter Property="IsEnabled" Value="True"/></DataTrigger>
+                            <DataTrigger Binding="{Binding IsExpanded}" Value="True"><Setter Property="Content" Value="▾"/></DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasChildren}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="CardBorder" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Padding" Value="18" />
+        </Style>
+        <Style x:Key="NavButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
+            <Setter Property="HorizontalContentAlignment" Value="Right" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Padding" Value="14,11" />
+            <Setter Property="Margin" Value="0,3" />
+        </Style>
+        <Style x:Key="ThreeDimensionalArrowButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#FF241232" />
+            <Setter Property="FontFamily" Value="Segoe UI Symbol" />
+            <Setter Property="FontSize" Value="21" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Background">
+                <Setter.Value>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#FFF29BC9" Offset="0" />
+                        <GradientStop Color="#FFD65B9F" Offset="0.42" />
+                        <GradientStop Color="#FF9A3C83" Offset="1" />
+                    </LinearGradientBrush>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="BorderBrush" Value="#FF7A2E6F" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Face" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12" RenderTransformOrigin="0.5,0.5">
+                            <Border.Effect><DropShadowEffect Color="#661A0F2E" BlurRadius="10" ShadowDepth="3" Opacity="0.8" /></Border.Effect>
+                            <Grid>
+                                <Border Height="22" Margin="1" VerticalAlignment="Top" CornerRadius="11,11,5,5" Background="#55FFFFFF" IsHitTestVisible="False" />
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,2" TextElement.Foreground="{TemplateBinding Foreground}">
+                                    <ContentPresenter.Effect><DropShadowEffect Color="#AAFFFFFF" BlurRadius="2" ShadowDepth="1" Opacity="0.9" /></ContentPresenter.Effect>
+                                </ContentPresenter>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="RenderTransform"><Setter.Value><TranslateTransform Y="-1" /></Setter.Value></Setter><Setter TargetName="Face" Property="Effect"><Setter.Value><DropShadowEffect Color="#AA7A2E6F" BlurRadius="16" ShadowDepth="5" Opacity="0.9" /></Setter.Value></Setter></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Face" Property="RenderTransform"><Setter.Value><TranslateTransform Y="2" /></Setter.Value></Setter><Setter TargetName="Face" Property="Effect"><Setter.Value><DropShadowEffect Color="#551A0F2E" BlurRadius="4" ShadowDepth="1" Opacity="0.7" /></Setter.Value></Setter></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.42" /><Setter TargetName="Face" Property="Effect"><Setter.Value><DropShadowEffect BlurRadius="2" ShadowDepth="1" Opacity="0.25" /></Setter.Value></Setter></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="{DynamicResource SurfaceInputBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="DropDownToggle" Focusable="False" ClickMode="Press" Background="Transparent" BorderThickness="0"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <Border x:Name="ComboChrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="10,5">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="18" /></Grid.ColumnDefinitions>
+                                        <ContentPresenter x:Name="ContentSite" Grid.Column="0" IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}" VerticalAlignment="Center" HorizontalAlignment="Right" TextElement.Foreground="{TemplateBinding Foreground}" />
+                                        <Path Grid.Column="1" Data="M 1 3 L 5 7 L 9 3" Stroke="{DynamicResource MutedTextBrush}" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+                                <Border Background="{DynamicResource SurfaceRaisedBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" Padding="4" Margin="0,4,0,0">
+                                    <ScrollViewer MaxHeight="260" CanContentScroll="True"><ItemsPresenter /></ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ComboChrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}" /></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="ComboChrome" Property="Opacity" Value="0.5" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="ItemChrome" Background="{TemplateBinding Background}" CornerRadius="5" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Right" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource AccentSoftBrush}" /></Trigger>
+                            <Trigger Property="IsSelected" Value="True"><Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource AccentSoftBrush}" /><Setter Property="Foreground" Value="{DynamicResource AccentBrush}" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="ListBox">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+        </Style>
+        <DataTemplate x:Key="LeftDiffLineTemplate">
+            <Border x:Name="LineSurface" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="0,1">
+                <Grid FlowDirection="LeftToRight">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="54" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="{Binding LeftNumber, TargetNullValue=''}" Foreground="{DynamicResource SubtleTextBrush}" FontFamily="Cascadia Code, Consolas" FontSize="11" TextAlignment="Right" VerticalAlignment="Top" Margin="0,6,8,0" />
+                    <local:DiffTextBlock Grid.Column="1" TextValue="{Binding LeftText}" CompareValue="{Binding RightText}" IsChanged="{Binding IsChanged}" SideIsLeft="True" FontFamily="Cascadia Code, Consolas" FontSize="12" Padding="8,5" TextWrapping="NoWrap" />
+                </Grid>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Kind}" Value="Changed"><Setter TargetName="LineSurface" Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" /></DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="LeftOnly"><Setter TargetName="LineSurface" Property="Background" Value="{DynamicResource DiffLeftBrush}" /></DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+        <DataTemplate x:Key="RightDiffLineTemplate">
+            <Border x:Name="LineSurface" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="0,1">
+                <Grid FlowDirection="LeftToRight">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="54" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="{Binding RightNumber, TargetNullValue=''}" Foreground="{DynamicResource SubtleTextBrush}" FontFamily="Cascadia Code, Consolas" FontSize="11" TextAlignment="Right" VerticalAlignment="Top" Margin="0,6,8,0" />
+                    <local:DiffTextBlock Grid.Column="1" TextValue="{Binding RightText}" CompareValue="{Binding LeftText}" IsChanged="{Binding IsChanged}" SideIsLeft="False" FontFamily="Cascadia Code, Consolas" FontSize="12" Padding="8,5" TextWrapping="NoWrap" />
+                </Grid>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Kind}" Value="Changed"><Setter TargetName="LineSurface" Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" /></DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="RightOnly"><Setter TargetName="LineSurface" Property="Background" Value="{DynamicResource DiffRightBrush}" /></DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid Background="#FFF3F4F6" FlowDirection="RightToLeft">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="28" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="#FFF7F7F8" BorderBrush="#FFD3D5D9" BorderThickness="0,0,0,1" Padding="10,8">
+            <Grid FlowDirection="LeftToRight">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <Grid Grid.Column="0" Margin="0,0,4,0">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBox x:Name="LeftPathBox" Grid.Column="0" Height="36" Padding="10,0" FlowDirection="LeftToRight" TextAlignment="Left" VerticalContentAlignment="Center" LostFocus="FolderPath_LostFocus" ToolTip="مسیر پوشهٔ سمت چپ" />
+                    <Button Grid.Column="1" Content="انتخاب پوشه" Click="BrowseLeftButton_Click" MinWidth="104" Margin="6,0,0,0" AutomationProperties.Name="انتخاب پوشهٔ سمت چپ" />
+                    <Button Grid.Column="2" Content="مقایسه" x:Name="CompareButton" Click="CompareButton_Click" MinWidth="84" Margin="6,0,0,0" AutomationProperties.Name="مقایسهٔ دو پوشه" />
+                </Grid>
+                <Grid Grid.Column="1" Margin="4,0,0,0">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBox x:Name="RightPathBox" Grid.Column="0" Height="36" Padding="10,0" FlowDirection="LeftToRight" TextAlignment="Left" VerticalContentAlignment="Center" LostFocus="FolderPath_LostFocus" ToolTip="مسیر پوشهٔ سمت راست" />
+                    <Button Grid.Column="1" Content="انتخاب پوشه" Click="BrowseRightButton_Click" MinWidth="104" Margin="6,0,0,0" AutomationProperties.Name="انتخاب پوشهٔ سمت راست" />
+                </Grid>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" Margin="8,8,8,6" Background="White" BorderBrush="#FFC9CCD1" BorderThickness="1" ClipToBounds="True">
+            <Grid FlowDirection="LeftToRight">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="48"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <Grid Grid.Column="0">
+                    <Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <Border Background="#FFF1F2F4" BorderBrush="#FFD2D4D8" BorderThickness="0,0,0,1" Padding="10,0">
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="92"/><ColumnDefinition Width="144"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Name" VerticalAlignment="Center" FontSize="12" Foreground="#FF343943" />
+                            <TextBlock Grid.Column="1" Text="Size" VerticalAlignment="Center" FontSize="12" Foreground="#FF343943" TextAlignment="Right" Margin="0,0,8,0" />
+                            <TextBlock Grid.Column="2" Text="Modified" VerticalAlignment="Center" FontSize="12" Foreground="#FF343943" TextAlignment="Right" />
+                        </Grid>
+                    </Border>
+                    <DataGrid x:Name="ResultsGrid" Grid.Row="1" SelectionMode="Extended" SelectionUnit="FullRow" IsReadOnly="True" AutoGenerateColumns="False" HeadersVisibility="None" GridLinesVisibility="None" CanUserSortColumns="False" CanUserResizeRows="False" RowHeight="27" BorderThickness="0" Background="White" AlternationCount="2" SelectionChanged="LeftPane_SelectionChanged" MouseDoubleClick="ResultsGrid_MouseDoubleClick" PreviewMouseDown="FolderGrid_PreviewMouseDown" PreviewMouseRightButtonDown="FolderGrid_PreviewMouseRightButtonDown" EnableRowVirtualization="True">
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow"><Setter Property="Foreground" Value="#FF24262B"/><Setter Property="Background" Value="White"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="0"/>
+                                <Style.Triggers>
+                                    <MultiDataTrigger><MultiDataTrigger.Conditions><Condition Binding="{Binding Kind}" Value="Changed"/><Condition Binding="{Binding IsDirectory}" Value="True"/></MultiDataTrigger.Conditions><Setter Property="Foreground" Value="#FF7A2E6F"/><Setter Property="Background" Value="#FFF4D7D4"/></MultiDataTrigger>
+                                    <DataTrigger Binding="{Binding Kind}" Value="LeftOnly"><Setter Property="Foreground" Value="#FFB52D3A"/><Setter Property="Background" Value="#FFFFEEEE"/></DataTrigger>
+                                    <DataTrigger Binding="{Binding HighlightLeftVersion}" Value="True"><Setter Property="Foreground" Value="#FF1A0F2E"/><Setter Property="Background" Value="#FFD65B9F"/><Setter Property="FontWeight" Value="SemiBold"/></DataTrigger>
+                                    <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#FFF0F5FA"/></Trigger>
+                                    <Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#FFE8F3EB"/><Setter Property="Foreground" Value="#FF28543A"/><Setter Property="BorderBrush" Value="#FFC4DDCB"/><Setter Property="BorderThickness" Value="0,0,0,1"/></Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Width="*"><DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                <Grid FlowDirection="LeftToRight" Margin="{Binding Depth, Converter={StaticResource TreeDepthIndentConverter}}"><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                    <Button Grid.Column="0" Style="{StaticResource TreeDisclosureButton}" Click="LeftFolderExpander_Click" AutomationProperties.Name="باز یا بسته کردن زیرشاخه" />
+                                    <TextBlock Grid.Column="1" Text="{Binding LeftDisplayName}" Foreground="#FF24262B" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="{Binding LeftVersionHint}" />
+                                </Grid>
+                            </DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                            <DataGridTextColumn Binding="{Binding LeftSize, StringFormat={}{0:N0}}" Width="92"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type DataGridRow}}}"/><Setter Property="TextAlignment" Value="Right"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="Margin" Value="0,0,8,0"/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
+                            <DataGridTextColumn Binding="{Binding LeftModified, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Width="144"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type DataGridRow}}}"/><Setter Property="TextAlignment" Value="Right"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="Margin" Value="0,0,8,0"/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
+                        </DataGrid.Columns>
+                        <DataGrid.CellStyle>
+                            <Style TargetType="DataGridCell" BasedOn="{StaticResource {x:Type DataGridCell}}">
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#FFE8F3EB" />
+                                        <Setter Property="Foreground" Value="#FF28543A" />
+                                        <Setter Property="BorderBrush" Value="#FFC4DDCB" />
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.CellStyle>
+                    </DataGrid>
+                </Grid>
+                <Border Grid.Column="1" Background="#FFF7F7F8" BorderBrush="#FFD3D5D9" BorderThickness="1,0">
+                    <Button x:Name="CopyDirectionButton" Content="➜" Style="{StaticResource ThreeDimensionalArrowButton}" Click="CopyDirectionButton_Click" Height="48" Width="42" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,10,0,0" ToolTip="پس از انتخاب، فایل را به سمت مقابل کپی می‌کند" AutomationProperties.Name="کپی انتخاب به سمت مقابل" IsEnabled="False" />
+                </Border>
+                <Grid Grid.Column="2">
+                    <Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <Border Background="#FFF1F2F4" BorderBrush="#FFD2D4D8" BorderThickness="0,0,0,1" Padding="10,0">
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="92"/><ColumnDefinition Width="144"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Name" VerticalAlignment="Center" FontSize="12" Foreground="#FF343943" />
+                            <TextBlock Grid.Column="1" Text="Size" VerticalAlignment="Center" FontSize="12" Foreground="#FF343943" TextAlignment="Right" Margin="0,0,8,0" />
+                            <TextBlock Grid.Column="2" Text="Modified" VerticalAlignment="Center" FontSize="12" Foreground="#FF343943" TextAlignment="Right" />
+                        </Grid>
+                    </Border>
+                    <DataGrid x:Name="RightResultsGrid" Grid.Row="1" SelectionMode="Extended" SelectionUnit="FullRow" IsReadOnly="True" AutoGenerateColumns="False" HeadersVisibility="None" GridLinesVisibility="None" CanUserSortColumns="False" CanUserResizeRows="False" RowHeight="27" BorderThickness="0" Background="White" AlternationCount="2" SelectionChanged="RightPane_SelectionChanged" MouseDoubleClick="ResultsGrid_MouseDoubleClick" PreviewMouseDown="FolderGrid_PreviewMouseDown" PreviewMouseRightButtonDown="FolderGrid_PreviewMouseRightButtonDown" EnableRowVirtualization="True">
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow"><Setter Property="Foreground" Value="#FF24262B"/><Setter Property="Background" Value="White"/><Setter Property="BorderThickness" Value="0"/>
+                                <Style.Triggers>
+                                    <MultiDataTrigger><MultiDataTrigger.Conditions><Condition Binding="{Binding Kind}" Value="Changed"/><Condition Binding="{Binding IsDirectory}" Value="True"/></MultiDataTrigger.Conditions><Setter Property="Foreground" Value="#FF7A2E6F"/><Setter Property="Background" Value="#FFF4D7D4"/></MultiDataTrigger>
+                                    <DataTrigger Binding="{Binding Kind}" Value="RightOnly"><Setter Property="Foreground" Value="#FFB52D3A"/><Setter Property="Background" Value="#FFFFEEEE"/></DataTrigger>
+                                    <DataTrigger Binding="{Binding HighlightRightVersion}" Value="True"><Setter Property="Foreground" Value="#FF1A0F2E"/><Setter Property="Background" Value="#FFD65B9F"/><Setter Property="FontWeight" Value="SemiBold"/></DataTrigger>
+                                    <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#FFF0F5FA"/></Trigger>
+                                    <Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#FFE8F3EB"/><Setter Property="Foreground" Value="#FF28543A"/><Setter Property="BorderBrush" Value="#FFC4DDCB"/><Setter Property="BorderThickness" Value="0,0,0,1"/></Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Width="*"><DataGridTemplateColumn.CellTemplate><DataTemplate>
+                                <Grid FlowDirection="LeftToRight" Margin="{Binding Depth, Converter={StaticResource TreeDepthIndentConverter}}"><Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                    <Button Grid.Column="0" Style="{StaticResource TreeDisclosureButton}" Click="RightFolderExpander_Click" AutomationProperties.Name="باز یا بسته کردن زیرشاخه" />
+                                    <TextBlock Grid.Column="1" Text="{Binding RightDisplayName}" Foreground="#FF24262B" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip="{Binding RightVersionHint}" />
+                                </Grid>
+                            </DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                            <DataGridTextColumn Binding="{Binding RightSize, StringFormat={}{0:N0}}" Width="92"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type DataGridRow}}}"/><Setter Property="TextAlignment" Value="Right"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="Margin" Value="0,0,8,0"/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
+                            <DataGridTextColumn Binding="{Binding RightModified, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Width="144"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type DataGridRow}}}"/><Setter Property="TextAlignment" Value="Right"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="Margin" Value="0,0,8,0"/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
+                        </DataGrid.Columns>
+                        <DataGrid.CellStyle>
+                            <Style TargetType="DataGridCell" BasedOn="{StaticResource {x:Type DataGridCell}}">
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#FFE8F3EB" />
+                                        <Setter Property="Foreground" Value="#FF28543A" />
+                                        <Setter Property="BorderBrush" Value="#FFC4DDCB" />
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.CellStyle>
+                    </DataGrid>
+                </Grid>
+                <StackPanel x:Name="EmptyResultsPanel" Grid.ColumnSpan="3" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" Background="#EFFFFFFF" Margin="12">
+                    <TextBlock Text="دو پوشه را انتخاب کنید و مقایسه را بزنید" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="#FF49505B" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2" Margin="12,0" FlowDirection="RightToLeft">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBlock x:Name="StatusText" Text="آماده" FontSize="10" Foreground="#FF5C616B" VerticalAlignment="Center"/>
+            <TextBlock x:Name="CountsText" Grid.Column="1" Text="بدون نتیجه" FontSize="10" Foreground="#FF5C616B" VerticalAlignment="Center"/>
+        </Grid>
+
+        <!-- Hidden compatibility controls keep existing file/text comparison and shortcut handlers wired. -->
+        <Grid Visibility="Collapsed" Width="0" Height="0">
+            <StackPanel>
+                <TextBlock x:Name="ModeBadge"/><TextBlock x:Name="LeftPathHint"/><TextBlock x:Name="RightPathHint"/><TextBlock x:Name="DurationText"/>
+                <Button x:Name="CancelButton" Click="CancelButton_Click"/><ProgressBar x:Name="ProgressBar"/>
+                <CheckBox x:Name="CompareContentCheck" IsChecked="True"/><CheckBox x:Name="CompareTimeCheck"/><CheckBox x:Name="IncludeSubdirectoriesCheck" IsChecked="True"/>
+                <Button x:Name="FolderModeButton" Click="FolderModeButton_Click"/><Button x:Name="FileModeButton" Click="FileModeButton_Click"/>
+                <TextBox x:Name="FilterBox" TextChanged="FilterBox_TextChanged"/><ComboBox x:Name="StatusFilterBox" SelectionChanged="StatusFilterBox_SelectionChanged"><ComboBoxItem Content="همهٔ وضعیت‌ها" Tag="all" IsSelected="True"/><ComboBoxItem Content="فقط تفاوت‌ها" Tag="different"/><ComboBoxItem Content="فقط یکسان‌ها" Tag="same"/><ComboBoxItem Content="فقط چپ" Tag="left"/><ComboBoxItem Content="فقط راست" Tag="right"/><ComboBoxItem Content="خطاها" Tag="error"/></ComboBox><TextBox x:Name="ExcludeBox" Text="bin;obj;.git;*.tmp" TextChanged="ExcludeBox_TextChanged"/>
+                <ListBox x:Name="DiffLeftList" SelectionChanged="DiffPane_SelectionChanged"/><ListBox x:Name="DiffRightList" SelectionChanged="DiffPane_SelectionChanged"/><TextBlock x:Name="DiffSummaryText"/><TextBlock x:Name="SelectedLeftFileText"/><TextBlock x:Name="SelectedRightFileText"/><TextBlock x:Name="DiffEmptyText"/>
+                <ListBox x:Name="RecentSessionsList" MouseDoubleClick="RecentSessionsList_MouseDoubleClick"/><TextBlock x:Name="RecentCountText"/><Button x:Name="ThemeButton" Click="ThemeButton_Click"/><Button x:Name="ShortcutsButton" Click="ShortcutsButton_Click"/><Button x:Name="MoreActionsButton" Click="MoreActionsButton_Click"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="DiffDesk.Core\DiffDesk.Core.csproj" />
+  <Project Path="DiffDesk.Desktop\DiffDesk.Desktop.csproj" />
+  <Project Path="DiffDesk.McpServer\DiffDesk.McpServer.csproj" />
+  <Project Path="DiffDesk.SmokeTests\DiffDesk.SmokeTests.csproj" />
+</Solution>
