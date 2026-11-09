@@ -320,7 +320,9 @@ public partial class MainWindow : Window
         _isBusy = busy;
         CompareButton.IsEnabled = !busy;
         CancelButton.IsEnabled = busy;
+        CancelButton.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         ProgressBar.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        ProgressBar.IsIndeterminate = busy;
         if (!busy) ProgressBar.Value = 0;
         StatusText.Text = status;
         UpdateCopyDirectionButton();

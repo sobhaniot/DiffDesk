@@ -193,7 +193,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="28" />
+            <RowDefinition Height="38" />
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0" Background="#FFF7F7F8" BorderBrush="#FFD3D5D9" BorderThickness="0,0,0,1" Padding="10,8">
@@ -313,17 +313,19 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Row="2" Margin="12,0" FlowDirection="RightToLeft">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <TextBlock x:Name="StatusText" Text="آماده" FontSize="10" Foreground="#FF5C616B" VerticalAlignment="Center"/>
-            <TextBlock x:Name="CountsText" Grid.Column="1" Text="بدون نتیجه" FontSize="10" Foreground="#FF5C616B" VerticalAlignment="Center"/>
+        <Grid Grid.Row="2" Margin="12,2" FlowDirection="RightToLeft">
+            <Grid.RowDefinitions><RowDefinition Height="22"/><RowDefinition Height="4"/></Grid.RowDefinitions>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBlock x:Name="StatusText" Text="آماده" FontSize="11" Foreground="#FF5C616B" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+            <TextBlock x:Name="CountsText" Grid.Column="1" Margin="10,0" Text="بدون نتیجه" FontSize="11" Foreground="#FF5C616B" VerticalAlignment="Center"/>
+            <Button x:Name="CancelButton" Grid.Column="2" Content="توقف" Style="{StaticResource QuietButton}" Padding="10,0" MinWidth="54" Height="24" Visibility="Collapsed" IsEnabled="False" Click="CancelButton_Click" AutomationProperties.Name="توقف مقایسه" />
+            <ProgressBar x:Name="ProgressBar" Grid.Row="1" Grid.ColumnSpan="3" Height="3" Minimum="0" Maximum="100" Foreground="#FF8B4BA7" Background="#FFE3E6EA" BorderThickness="0" Visibility="Collapsed" />
         </Grid>
 
         <!-- Hidden compatibility controls keep existing file/text comparison and shortcut handlers wired. -->
         <Grid Visibility="Collapsed" Width="0" Height="0">
             <StackPanel>
                 <TextBlock x:Name="ModeBadge"/><TextBlock x:Name="LeftPathHint"/><TextBlock x:Name="RightPathHint"/><TextBlock x:Name="DurationText"/>
-                <Button x:Name="CancelButton" Click="CancelButton_Click"/><ProgressBar x:Name="ProgressBar"/>
                 <CheckBox x:Name="CompareContentCheck" IsChecked="True"/><CheckBox x:Name="CompareTimeCheck"/><CheckBox x:Name="IncludeSubdirectoriesCheck" IsChecked="True"/>
                 <Button x:Name="FolderModeButton" Click="FolderModeButton_Click"/><Button x:Name="FileModeButton" Click="FileModeButton_Click"/>
                 <TextBox x:Name="FilterBox" TextChanged="FilterBox_TextChanged"/><ComboBox x:Name="StatusFilterBox" SelectionChanged="StatusFilterBox_SelectionChanged"><ComboBoxItem Content="همهٔ وضعیت‌ها" Tag="all" IsSelected="True"/><ComboBoxItem Content="فقط تفاوت‌ها" Tag="different"/><ComboBoxItem Content="فقط یکسان‌ها" Tag="same"/><ComboBoxItem Content="فقط چپ" Tag="left"/><ComboBoxItem Content="فقط راست" Tag="right"/><ComboBoxItem Content="خطاها" Tag="error"/></ComboBox><TextBox x:Name="ExcludeBox" Text="bin;obj;.git;*.tmp" TextChanged="ExcludeBox_TextChanged"/>

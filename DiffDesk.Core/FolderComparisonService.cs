@@ -55,6 +55,32 @@ public sealed class FolderComparisonService
             }
         }
         var orderedPaths = allPaths.OrderBy(path => path, new HierarchicalPathComparer(comparer)).ToArray();
+        var fileKinds = new Dictionary<string, DifferenceKind>(comparer);
+        var changedDirectories = new HashSet<string>(comparer);
+
+        for (var index = 0; index < orderedPaths.Length; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var relative = orderedPaths[index];
+            var hasLeftDirectory = leftDirectories.ContainsKey(relative);
+            var hasRightDirectory = rightDirectories.ContainsKey(relative);
+            if (hasLeftDirectory || hasRightDirectory)
+            {
+                if (hasLeftDirectory != hasRightDirectory) AddAncestorDirectories(relative, changedDirectories);
+            }
+            else
+            {
+                leftFiles.TryGetValue(relative, out var leftFile);
+                rightFiles.TryGetValue(relative, out var rightFile);
+                var kind = Classify(leftFile, rightFile, options, cancellationToken);
+                fileKinds[relative] = kind;
+                if (kind != DifferenceKind.Identical) AddAncestorDirectories(relative, changedDirectories);
+            }
+
+            if (index % 16 == 0 || index == orderedPaths.Length - 1)
+                progress?.Report(new ComparisonProgress(index + 1, orderedPaths.Length, relative, "مقایسهٔ محتوا"));
+        }
+
         var rows = new List<FileComparisonRow>(orderedPaths.Length);
 
         for (var index = 0; index < orderedPaths.Length; index++)
@@ -66,7 +92,7 @@ public sealed class FolderComparisonService
                 leftDirectories.TryGetValue(relative, out leftDirectory);
                 rightDirectories.TryGetValue(relative, out rightDirectory);
                 var kind = leftDirectory is null ? DifferenceKind.RightOnly : rightDirectory is null ? DifferenceKind.LeftOnly :
-                    HasDifferentDescendant(relative, leftFiles, rightFiles, options, cancellationToken, comparer) ? DifferenceKind.Changed : DifferenceKind.Identical;
+                    changedDirectories.Contains(relative) ? DifferenceKind.Changed : DifferenceKind.Identical;
                 rows.Add(new FileComparisonRow(relative, leftDirectory, rightDirectory, null, null,
                     leftDirectory is null ? null : Directory.GetLastWriteTimeUtc(leftDirectory),
                     rightDirectory is null ? null : Directory.GetLastWriteTimeUtc(rightDirectory), kind,
@@ -76,32 +102,24 @@ public sealed class FolderComparisonService
             {
                 leftFiles.TryGetValue(relative, out var leftFile);
                 rightFiles.TryGetValue(relative, out var rightFile);
-                var kind = Classify(leftFile, rightFile, options, cancellationToken);
+                var kind = fileKinds[relative];
                 rows.Add(new FileComparisonRow(relative, leftFile?.FullPath, rightFile?.FullPath,
                     leftFile?.Length, rightFile?.Length, leftFile?.Modified, rightFile?.Modified, kind,
                     Depth: relative.Count(character => character == '/')));
             }
-
-            if (index % 32 == 0 || index == orderedPaths.Length - 1)
-                progress?.Report(new ComparisonProgress(index + 1, orderedPaths.Length, relative, "مقایسهٔ محتوا"));
         }
 
         return new ComparisonSnapshot(rows, issues, DateTime.UtcNow - started);
     }
 
-    private static bool HasDifferentDescendant(string directoryName, IReadOnlyDictionary<string, FileRecord> leftFiles,
-        IReadOnlyDictionary<string, FileRecord> rightFiles, ComparisonOptions options, CancellationToken cancellationToken, StringComparer comparer)
+    private static void AddAncestorDirectories(string relativePath, HashSet<string> changedDirectories)
     {
-        var prefix = directoryName + "/";
-        var paths = new HashSet<string>(leftFiles.Keys.Where(path => path.StartsWith(prefix, options.IgnoreNameCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)), comparer);
-        paths.UnionWith(rightFiles.Keys.Where(path => path.StartsWith(prefix, options.IgnoreNameCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)));
-        foreach (var path in paths)
+        var separator = relativePath.LastIndexOf('/');
+        while (separator >= 0)
         {
-            leftFiles.TryGetValue(path, out var left);
-            rightFiles.TryGetValue(path, out var right);
-            if (Classify(left, right, options, cancellationToken) != DifferenceKind.Identical) return true;
+            changedDirectories.Add(relativePath[..separator]);
+            separator = relativePath.LastIndexOf('/', separator - 1);
         }
-        return false;
     }
 
     private static Dictionary<string, FileRecord> Scan(
