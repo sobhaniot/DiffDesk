@@ -44,7 +44,6 @@ The user interface is Persian-first and right-to-left. The comparison panes rema
 - Copy/move/delete/rename operations are represented as plans before execution.
 - MCP copy and delete require a second, explicit confirmation call after preview.
 - Paths are resolved beneath the chosen destination root; attempts to escape that root are rejected.
-- Backups are stored under the configured DiffDesk data directory.
 - Reparse points are skipped during recursive folder scans to avoid accidental traversal through junctions or symlinks.
 
 These are current implementation behaviors, not a guarantee against every filesystem failure. Permission errors and unavailable paths can still cause individual operations to fail and are reported to the caller.

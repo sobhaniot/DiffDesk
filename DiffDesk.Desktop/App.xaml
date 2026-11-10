@@ -27,6 +27,9 @@
             <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI" />
             <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         </Style>
+        <DataTemplate x:Key="ContextMenuLabelTemplate">
+            <TextBlock Text="{Binding}" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type MenuItem}}}" />
+        </DataTemplate>
         <Style TargetType="TextBox">
             <Setter Property="Background" Value="{DynamicResource SurfaceInputBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />

@@ -20,7 +20,6 @@ public partial class MainWindow : Window
     private readonly SessionStore _sessionStore = new(App.GetDataDirectory());
     private readonly FileChangeHistory _fileChangeHistory = new(App.GetDataDirectory());
     private readonly ObservableCollection<DiffLine> _diffLines = [];
-    private readonly string _backupRoot = Path.Combine(App.GetDataDirectory(), "Backups");
     private List<FileComparisonRow> _allRows = [];
     private Dictionary<string, FileComparisonRow> _rowsByPath = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _operationCancellation;
@@ -32,6 +31,13 @@ public partial class MainWindow : Window
     private bool _restoringLastFolders;
     private bool _syncingDiffPanes;
     private bool _syncingFolderPanes;
+    private (FileComparisonRow Row, FileSide Side, int Time, Point Position)? _lastFolderClick;
+    private (DataGrid Grid, FileComparisonRow Row)? _folderSelectionAnchor;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", ExactSpelling = true)]
+    private static extern uint GetDoubleClickTime();
+    private string _sortColumn = "Name";
+    private bool _sortAscending = true;
     private FileSide _selectedFolderSide = FileSide.Left;
     private ScrollViewer? _leftDiffScrollViewer;
     private ScrollViewer? _rightDiffScrollViewer;
@@ -60,6 +66,7 @@ public partial class MainWindow : Window
         if (_leftFolderScrollViewer is not null) _leftFolderScrollViewer.ScrollChanged += FolderScrollViewer_ScrollChanged;
         if (_rightFolderScrollViewer is not null) _rightFolderScrollViewer.ScrollChanged += FolderScrollViewer_ScrollChanged;
         UpdateThemeButton();
+        UpdateSortHeaderCaptions();
         LeftPathBox.Focus();
     }
 
@@ -245,8 +252,9 @@ public partial class MainWindow : Window
             {
                 var options = new ComparisonOptions
                 {
-                    CompareContent = CompareContentCheck.IsChecked == true,
-                    CompareModifiedTime = CompareTimeCheck.IsChecked == true,
+                    CompareContent = false,
+                    CompareModifiedTime = true,
+                    VerifyTimestampDifferencesByContent = true,
                     IncludeSubdirectories = IncludeSubdirectoriesCheck.IsChecked == true,
                     ExcludePatterns = ExcludeBox.Text,
                     IgnoreNameCase = true
@@ -281,7 +289,9 @@ public partial class MainWindow : Window
             }
 
             StatusText.Text = "در حال بررسی سابقهٔ تغییرات فایل‌ها…";
-            snapshot = await _fileChangeHistory.TrackAsync(snapshot, _operationCancellation.Token, progress);
+            snapshot = await _fileChangeHistory.TrackAsync(snapshot, _operationCancellation.Token, progress,
+                preferLatestTimestamp: _mode == ComparisonMode.Folders);
+            snapshot = ResolveDirectoryNewerSides(snapshot);
             stopwatch.Stop();
             _allRows = snapshot.Rows.ToList();
             _rowsByPath = _allRows.ToDictionary(row => row.RelativePath, StringComparer.OrdinalIgnoreCase);
@@ -317,6 +327,58 @@ public partial class MainWindow : Window
         {
             SetBusy(false, StatusText.Text);
         }
+    }
+
+    private static ComparisonSnapshot ResolveDirectoryNewerSides(ComparisonSnapshot snapshot)
+    {
+        var rows = snapshot.Rows.ToArray();
+        var votes = new Dictionary<string, (int Left, int Right, DateTime? LeftLatest, DateTime? RightLatest)>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in rows)
+        {
+            if (row.Kind == DifferenceKind.Identical || row.Kind == DifferenceKind.Error) continue;
+            if (row.IsDirectory && row.Kind == DifferenceKind.Changed) continue;
+            var side = row.Kind switch
+            {
+                DifferenceKind.LeftOnly => FileSide.Left,
+                DifferenceKind.RightOnly => FileSide.Right,
+                _ => row.NewerSide
+            };
+            if (side is null) continue;
+
+            var modified = side == FileSide.Left ? row.LeftModified : row.RightModified;
+            var separator = row.RelativePath.LastIndexOf('/');
+            while (separator >= 0)
+            {
+                var parent = row.RelativePath[..separator];
+                votes.TryGetValue(parent, out var vote);
+                votes[parent] = side == FileSide.Left
+                    ? (vote.Left + 1, vote.Right, Later(vote.LeftLatest, modified), vote.RightLatest)
+                    : (vote.Left, vote.Right + 1, vote.LeftLatest, Later(vote.RightLatest, modified));
+                separator = row.RelativePath.LastIndexOf('/', separator - 1);
+            }
+        }
+
+        for (var index = 0; index < rows.Length; index++)
+        {
+            var row = rows[index];
+            if (!row.IsDirectory || row.Kind != DifferenceKind.Changed) continue;
+            votes.TryGetValue(row.RelativePath, out var vote);
+
+            FileSide? newerSide = vote.Left > vote.Right ? FileSide.Left
+                : vote.Right > vote.Left ? FileSide.Right
+                : vote.LeftLatest > vote.RightLatest ? FileSide.Left
+                : vote.RightLatest > vote.LeftLatest ? FileSide.Right
+                : row.LeftModified > row.RightModified ? FileSide.Left
+                : row.RightModified > row.LeftModified ? FileSide.Right
+                : row.ChangedContentSide;
+
+            if (newerSide is not null) rows[index] = row with { ChangedContentSide = newerSide };
+        }
+
+        return snapshot with { Rows = rows };
+
+        static DateTime? Later(DateTime? left, DateTime? right) => left is null || right > left ? right : left;
     }
 
     private void SetBusy(bool busy, string status)
@@ -476,11 +538,7 @@ public partial class MainWindow : Window
         var sourceGrid = sender as DataGrid;
         if (sourceGrid is null) return;
         if (sourceGrid.SelectedItem is not FileComparisonRow row) return;
-        if (row.IsDirectory)
-        {
-            ToggleFolderExpansion(row, ReferenceEquals(sourceGrid, RightResultsGrid) ? FileSide.Right : FileSide.Left);
-            return;
-        }
+        if (row.IsDirectory) return;
         if (row.LeftPath is not null && row.RightPath is not null) _ = OpenFileComparisonAsync(row);
     }
 
@@ -528,6 +586,7 @@ public partial class MainWindow : Window
 
     private void FilterBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyFilters();
     private void StatusFilterBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => ApplyFilters();
+    private void DifferenceVisibilityBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => ApplyFilters();
     private void ExcludeBox_TextChanged(object sender, TextChangedEventArgs e) { }
 
     private void ApplyFilters()
@@ -535,9 +594,11 @@ public partial class MainWindow : Window
         if (ResultsGrid is null) return;
         var search = FilterBox.Text.Trim();
         var tag = (StatusFilterBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "all";
+        var differenceTag = (DifferenceVisibilityBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "all";
         var matches = _allRows.Where(row =>
         {
             if (search.Length > 0 && row.RelativePath.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) < 0) return false;
+            if (differenceTag == "different" && row.Kind is not (DifferenceKind.Changed or DifferenceKind.LeftOnly or DifferenceKind.RightOnly)) return false;
             return tag switch
             {
                 "different" => row.Kind is DifferenceKind.Changed or DifferenceKind.LeftOnly or DifferenceKind.RightOnly or DifferenceKind.Error,
@@ -565,12 +626,84 @@ public partial class MainWindow : Window
                 }
             }
         }
-        var filtered = _allRows.Where(row => matches.Contains(row.RelativePath) && IsVisibleInExpandedTree(row)).ToList();
+        var filtered = SortRows(_allRows.Where(row => matches.Contains(row.RelativePath) && IsVisibleInExpandedTree(row))).ToList();
+        _folderSelectionAnchor = null;
         _syncingFolderPanes = true;
         ResultsGrid.ItemsSource = filtered;
         RightResultsGrid.ItemsSource = filtered;
         _syncingFolderPanes = false;
         UpdateCopyDirectionButton();
+    }
+
+    private void SortHeader_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string column }) return;
+        if (string.Equals(_sortColumn, column, StringComparison.Ordinal)) _sortAscending = !_sortAscending;
+        else
+        {
+            _sortColumn = column;
+            _sortAscending = true;
+        }
+        UpdateSortHeaderCaptions();
+        ApplyFilters();
+    }
+
+    private void UpdateSortHeaderCaptions()
+    {
+        if (LeftNameSortHeader is null) return;
+        var marker = _sortAscending ? "  ▲" : "  ▼";
+        LeftNameSortHeader.Content = RightNameSortHeader.Content = "Name" + (_sortColumn == "Name" ? marker : string.Empty);
+        LeftSizeSortHeader.Content = RightSizeSortHeader.Content = "Size" + (_sortColumn == "Size" ? marker : string.Empty);
+        LeftModifiedSortHeader.Content = RightModifiedSortHeader.Content = "Modified" + (_sortColumn == "Modified" ? marker : string.Empty);
+    }
+
+    private IEnumerable<FileComparisonRow> SortRows(IEnumerable<FileComparisonRow> rows)
+    {
+        var childrenByParent = rows
+            .GroupBy(row => ParentPath(row.RelativePath), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+        var ordered = new List<FileComparisonRow>();
+        AppendChildren(string.Empty);
+        return ordered;
+
+        void AppendChildren(string parentPath)
+        {
+            if (!childrenByParent.TryGetValue(parentPath, out var siblings)) return;
+            siblings.Sort(CompareSiblings);
+            foreach (var row in siblings)
+            {
+                ordered.Add(row);
+                if (row.IsDirectory) AppendChildren(row.RelativePath);
+            }
+        }
+
+        int CompareSiblings(FileComparisonRow left, FileComparisonRow right)
+        {
+            if (left.IsDirectory != right.IsDirectory) return left.IsDirectory ? -1 : 1;
+            var comparison = _sortColumn switch
+            {
+                "Size" => Math.Max(left.LeftSize ?? 0, left.RightSize ?? 0).CompareTo(Math.Max(right.LeftSize ?? 0, right.RightSize ?? 0)),
+                "Modified" => LatestModified(left).CompareTo(LatestModified(right)),
+                _ => StringComparer.OrdinalIgnoreCase.Compare(Path.GetFileName(left.RelativePath), Path.GetFileName(right.RelativePath))
+            };
+            if (!_sortAscending) comparison = -comparison;
+            return comparison != 0
+                ? comparison
+                : StringComparer.OrdinalIgnoreCase.Compare(Path.GetFileName(left.RelativePath), Path.GetFileName(right.RelativePath));
+        }
+
+        static string ParentPath(string path)
+        {
+            var separator = path.LastIndexOf('/');
+            return separator < 0 ? string.Empty : path[..separator];
+        }
+
+        static DateTime LatestModified(FileComparisonRow row)
+        {
+            var left = row.LeftModified ?? DateTime.MinValue;
+            var right = row.RightModified ?? DateTime.MinValue;
+            return left > right ? left : right;
+        }
     }
 
     private bool IsVisibleInExpandedTree(FileComparisonRow row)
@@ -614,16 +747,52 @@ public partial class MainWindow : Window
     {
         if (sender is not DataGrid grid || e.ChangedButton != MouseButton.Left) return;
         var origin = e.OriginalSource as DependencyObject;
-        var row = ItemsControl.ContainerFromElement(grid, origin) as DataGridRow;
+        var row = FindVisualAncestor<DataGridRow>(origin);
+        if (row is not null && !ReferenceEquals(ItemsControl.ItemsControlFromItemContainer(row), grid)) row = null;
         var side = ReferenceEquals(grid, ResultsGrid) ? FileSide.Left : FileSide.Right;
         var disclosureButton = FindVisualAncestor<Button>(origin);
         var isDisclosureClick = disclosureButton is not null &&
             AutomationProperties.GetName(disclosureButton) == "باز یا بسته کردن زیرشاخه";
-        if (row is not null && !isDisclosureClick &&
-            (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != ModifierKeys.None)
+        var previousFolderClick = _lastFolderClick;
+        _lastFolderClick = null;
+        if (row?.Item is FileComparisonRow clickedRow && !clickedRow.IsVisibleOnSide(side) && !isDisclosureClick)
+        {
+            e.Handled = true;
             return;
-
+        }
+        if (row?.Item is FileComparisonRow clickedFolder && clickedFolder.IsDirectory && !isDisclosureClick &&
+            (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) == ModifierKeys.None)
+        {
+            var position = e.GetPosition(grid);
+            if (previousFolderClick is { } first && ReferenceEquals(first.Row, clickedFolder) && first.Side == side &&
+                unchecked((uint)(e.Timestamp - first.Time)) <= GetDoubleClickTime() &&
+                Math.Abs(position.X - first.Position.X) <= SystemParameters.MinimumHorizontalDragDistance &&
+                Math.Abs(position.Y - first.Position.Y) <= SystemParameters.MinimumVerticalDragDistance)
+            {
+                e.Handled = true;
+                ToggleFolderExpansion(clickedFolder, side);
+                return;
+            }
+            _lastFolderClick = (clickedFolder, side, e.Timestamp, position);
+        }
         var otherGrid = ReferenceEquals(grid, ResultsGrid) ? RightResultsGrid : ResultsGrid;
+        var modifiers = Keyboard.Modifiers;
+        if (row?.Item is FileComparisonRow item && !isDisclosureClick)
+        {
+            if (modifiers.HasFlag(ModifierKeys.Shift))
+            {
+                SelectFolderRange(grid, otherGrid, side, item, modifiers.HasFlag(ModifierKeys.Control));
+                e.Handled = true;
+                return;
+            }
+            _folderSelectionAnchor = (grid, item);
+            if (modifiers.HasFlag(ModifierKeys.Control)) return;
+        }
+        else
+        {
+            _folderSelectionAnchor = null;
+        }
+
         if (row is null && grid.SelectedItems.Count == 0 && otherGrid.SelectedItems.Count == 0) return;
         _selectedFolderSide = side;
         _syncingFolderPanes = true;
@@ -642,6 +811,44 @@ public partial class MainWindow : Window
             e.Handled = true;
             ToggleFolderExpansion(folder, side);
             return;
+        }
+        UpdateCopyDirectionButton();
+    }
+
+    private void SelectFolderRange(DataGrid grid, DataGrid otherGrid, FileSide side, FileComparisonRow endRow, bool extend)
+    {
+        var endIndex = grid.Items.IndexOf(endRow);
+        if (endIndex < 0) return;
+        var startIndex = _folderSelectionAnchor is { } anchor && ReferenceEquals(anchor.Grid, grid)
+            ? grid.Items.IndexOf(anchor.Row)
+            : -1;
+        if (startIndex < 0)
+        {
+            startIndex = endIndex;
+            _folderSelectionAnchor = (grid, endRow);
+        }
+
+        var range = grid.Items.Cast<FileComparisonRow>()
+            .Skip(Math.Min(startIndex, endIndex))
+            .Take(Math.Abs(endIndex - startIndex) + 1)
+            .Where(row => row.IsVisibleOnSide(side))
+            .ToArray();
+        var selected = extend ? grid.SelectedItems.OfType<FileComparisonRow>().Concat(range) : range;
+        var normalized = FileSelectionPolicy.Normalize(selected, range);
+
+        _selectedFolderSide = side;
+        _syncingFolderPanes = true;
+        try
+        {
+            otherGrid.UnselectAll();
+            grid.CurrentCell = new DataGridCellInfo(endRow, grid.Columns[0]);
+            grid.Focus();
+            grid.UnselectAll();
+            foreach (var item in normalized) grid.SelectedItems.Add(item);
+        }
+        finally
+        {
+            _syncingFolderPanes = false;
         }
         UpdateCopyDirectionButton();
     }
@@ -730,14 +937,11 @@ public partial class MainWindow : Window
 
         var itemExists = (side == FileSide.Left ? row.LeftPath : row.RightPath) is not null;
         var menu = new ContextMenu { FlowDirection = FlowDirection.RightToLeft };
-        var deleteItem = new MenuItem
-        {
-            Header = row.IsDirectory ? $"حذف پوشه و محتویات از سمت {(side == FileSide.Left ? "چپ" : "راست")}…" : $"حذف فایل از سمت {(side == FileSide.Left ? "چپ" : "راست")}…",
-            Padding = new Thickness(12, 8, 18, 8),
-            IsEnabled = itemExists
-        };
-        deleteItem.Click += (_, _) => _ = RunDeleteAsync(side);
-        menu.Items.Add(deleteItem);
+        var sideLabel = side == FileSide.Left ? "چپ" : "راست";
+        var deleteLabel = row.IsDirectory
+            ? $"حذف پوشه و محتویات از سمت {sideLabel}…"
+            : $"حذف فایل از سمت {sideLabel}…";
+        AddMenuItem(menu, deleteLabel, (_, _) => _ = RunDeleteAsync(side), itemExists);
         menu.PlacementTarget = container;
         menu.IsOpen = true;
         e.Handled = true;
@@ -777,10 +981,10 @@ public partial class MainWindow : Window
             : $"• {item.SourcePath}  →  {item.DestinationPath}"));
         if (plan.Items.Count > 6) preview += Environment.NewLine + $"… و {plan.Items.Count - 6:N0} مورد دیگر";
         var overwriteNote = plan.OverwriteCount > 0
-            ? $"{Environment.NewLine}{Environment.NewLine}{plan.OverwriteCount:N0} مورد مقصد جایگزین می‌شود. نسخه‌های فایل‌های مقصد پیش از تغییر در پوشهٔ پشتیبان برنامه ذخیره می‌شوند."
+            ? $"{Environment.NewLine}{Environment.NewLine}{plan.OverwriteCount:N0} مورد مقصد جایگزین می‌شود."
             : string.Empty;
-        var backupNote = plan.Kind is FileOperationKind.Delete or FileOperationKind.Move or FileOperationKind.Rename
-            ? $"{Environment.NewLine}{Environment.NewLine}برای امکان بازیابی، نسخهٔ پشتیبان محلی ساخته می‌شود."
+        var deleteNote = plan.Kind == FileOperationKind.Delete
+            ? $"{Environment.NewLine}{Environment.NewLine}این حذف دائمی است."
             : string.Empty;
         var operationTitle = plan.Kind switch
         {
@@ -807,11 +1011,10 @@ public partial class MainWindow : Window
             }
             cancellationToken.ThrowIfCancellationRequested();
             StatusText.Text = plan.Description;
-            var answer = GlassDialog.Confirm(this, operationTitle, $"{conflictNote}{plan.Description}{Environment.NewLine}{Environment.NewLine}{preview}{overwriteNote}{backupNote}{Environment.NewLine}{Environment.NewLine}ادامه می‌دهید؟");
+            var answer = GlassDialog.Confirm(this, operationTitle, $"{conflictNote}{plan.Description}{Environment.NewLine}{Environment.NewLine}{preview}{overwriteNote}{deleteNote}{Environment.NewLine}{Environment.NewLine}ادامه می‌دهید؟");
             if (!answer) return;
 
-            var result = await _fileOperations.ExecuteAsync(plan, _backupRoot, new Progress<ComparisonProgress>(UpdateProgress), cancellationToken);
-            var backup = result.BackupDirectory is null ? "" : $"{Environment.NewLine}پشتیبان: {result.BackupDirectory}";
+            var result = await _fileOperations.ExecuteAsync(plan, new Progress<ComparisonProgress>(UpdateProgress), cancellationToken);
             var detail = result.Errors.Count == 0 ? "" : Environment.NewLine + string.Join(Environment.NewLine, result.Errors.Take(5));
             var tone = result.Failed == 0 ? GlassDialogTone.Success : result.Succeeded > 0 ? GlassDialogTone.Warning : GlassDialogTone.Error;
             var operationName = plan.Kind switch
@@ -825,12 +1028,12 @@ public partial class MainWindow : Window
             var explanation = result.Errors.Any(error => error.Contains("دسترسی", StringComparison.Ordinal))
                 ? $"{Environment.NewLine}{Environment.NewLine}اگر مورد در برنامه‌ای باز است آن را ببندید و مجوز دسترسی به مسیر را بررسی کنید."
                 : string.Empty;
-            GlassDialog.Show(this, title, $"موفق: {result.Succeeded:N0}    ناموفق: {result.Failed:N0}{detail}{explanation}{backup}", tone);
             if (result.Succeeded > 0)
             {
                 SetBusy(false, "عملیات پایان یافت؛ در حال به‌روزرسانی مقایسه…");
                 await CompareAsync();
             }
+            GlassDialog.Show(this, title, $"موفق: {result.Succeeded:N0}    ناموفق: {result.Failed:N0}{detail}{explanation}", tone);
         }
         catch (OperationCanceledException) { StatusText.Text = "عملیات متوقف شد"; }
         catch (Exception exception) { GlassDialog.Show(this, "عملیات فایل ناموفق بود", exception.Message, GlassDialogTone.Error); }
@@ -858,9 +1061,10 @@ public partial class MainWindow : Window
         menu.IsOpen = true;
     }
 
-    private static void AddMenuItem(ItemsControl menu, string label, RoutedEventHandler action)
+    private static void AddMenuItem(ItemsControl menu, string label, RoutedEventHandler action, bool isEnabled = true)
     {
-        var item = new MenuItem { Header = label, Padding = new Thickness(12, 8, 18, 8) };
+        var item = new MenuItem { Header = label, Padding = new Thickness(12, 8, 18, 8), IsEnabled = isEnabled };
+        item.SetResourceReference(MenuItem.HeaderTemplateProperty, "ContextMenuLabelTemplate");
         item.Click += action;
         menu.Items.Add(item);
     }

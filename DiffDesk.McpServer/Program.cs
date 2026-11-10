@@ -148,13 +148,13 @@ internal sealed class DiffDeskMcpServer
             {
                 name = "copy_items",
                 description = "Copy selected relative paths from one folder tree to another. Returns a preview unless confirm=true. Directories include all nested files and folders.",
-                inputSchema = Schema(new { sourceRoot = StringProperty("Absolute source folder path."), destinationRoot = StringProperty("Absolute destination folder path."), relativePaths = StringArrayProperty("Relative paths of selected files or folders."), confirm = BoolProperty("Set true only after reviewing the preview to execute the copy."), backupRoot = StringProperty("Optional absolute path for backups of overwritten destination items.") }, "sourceRoot", "destinationRoot", "relativePaths")
+                inputSchema = Schema(new { sourceRoot = StringProperty("Absolute source folder path."), destinationRoot = StringProperty("Absolute destination folder path."), relativePaths = StringArrayProperty("Relative paths of selected files or folders."), confirm = BoolProperty("Set true only after reviewing the preview to execute the copy.") }, "sourceRoot", "destinationRoot", "relativePaths")
             },
             new
             {
                 name = "delete_items",
-                description = "Delete selected relative paths from a folder tree after creating recoverable backups. Returns a preview unless confirm=true. Deleting a directory includes its complete contents.",
-                inputSchema = Schema(new { rootPath = StringProperty("Absolute folder path containing the selected items."), relativePaths = StringArrayProperty("Relative paths of selected files or folders."), confirm = BoolProperty("Set true only after reviewing the preview to execute deletion."), backupRoot = StringProperty("Optional absolute backup directory. Defaults to DiffDesk's local backup folder.") }, "rootPath", "relativePaths")
+                description = "Permanently delete selected relative paths from a folder tree. Returns a preview unless confirm=true. Deleting a directory includes its complete contents.",
+                inputSchema = Schema(new { rootPath = StringProperty("Absolute folder path containing the selected items."), relativePaths = StringArrayProperty("Relative paths of selected files or folders."), confirm = BoolProperty("Set true only after reviewing the preview to execute deletion.") }, "rootPath", "relativePaths")
             }
         }
     };
@@ -259,9 +259,8 @@ internal sealed class DiffDeskMcpServer
         if (!OptionalBool(args, "confirm", false))
             return ToolResult(new { state = "preview", plan.Description, items = plan.Items.Select(item => new { item.RelativePath, item.IsDirectory, item.DestinationExists, source = item.SourcePath, destination = item.DestinationPath }) });
 
-        var backupRoot = ResolveBackupRoot(OptionalString(args, "backupRoot"));
-        var report = await _operations.ExecuteAsync(plan, backupRoot);
-        return ToolResult(new { state = "completed", plan.Description, report.Succeeded, report.Failed, report.Errors, report.BackupDirectory });
+        var report = await _operations.ExecuteAsync(plan);
+        return ToolResult(new { state = "completed", plan.Description, report.Succeeded, report.Failed, report.Errors });
     }
 
     private async Task<object> DeleteItemsAsync(JsonElement args)
@@ -271,11 +270,10 @@ internal sealed class DiffDeskMcpServer
         var rows = BuildSelectedRows(rootPath, RequiredStringArray(args, "relativePaths"));
         var plan = _operations.CreateDeletePlan(rows, FileSide.Left);
         if (!OptionalBool(args, "confirm", false))
-            return ToolResult(new { state = "preview", plan.Description, backupRoot = ResolveBackupRoot(OptionalString(args, "backupRoot")), items = plan.Items.Select(item => new { item.RelativePath, item.IsDirectory, source = item.SourcePath, includesContents = item.IsDirectory }) });
+            return ToolResult(new { state = "preview", plan.Description, items = plan.Items.Select(item => new { item.RelativePath, item.IsDirectory, source = item.SourcePath, includesContents = item.IsDirectory }) });
 
-        var backupRoot = ResolveBackupRoot(OptionalString(args, "backupRoot"));
-        var report = await _operations.ExecuteAsync(plan, backupRoot);
-        return ToolResult(new { state = "completed", plan.Description, report.Succeeded, report.Failed, report.Errors, report.BackupDirectory });
+        var report = await _operations.ExecuteAsync(plan);
+        return ToolResult(new { state = "completed", plan.Description, report.Succeeded, report.Failed, report.Errors });
     }
 
     private static FileComparisonRow[] BuildSelectedRows(string root, IReadOnlyList<string> relativePaths)
@@ -303,13 +301,6 @@ internal sealed class DiffDeskMcpServer
         if (Path.IsPathRooted(clean) || clean.StartsWith('/') || clean.Split('/').Any(segment => segment is "" or "." or "..") || clean.Contains(':'))
             throw new ArgumentException($"مسیر نسبی معتبر نیست: {value}");
         return clean;
-    }
-
-    private static string ResolveBackupRoot(string? requested)
-    {
-        var dataRoot = Environment.GetEnvironmentVariable("DIFFDESK_DATA_DIR");
-        if (string.IsNullOrWhiteSpace(dataRoot)) dataRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DiffDesk");
-        return FullPath(requested ?? Path.Combine(dataRoot, "Backups"));
     }
 
     private static string FullPath(string path) => Path.GetFullPath(path.Trim().Trim('"'));

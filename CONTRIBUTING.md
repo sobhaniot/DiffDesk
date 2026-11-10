@@ -16,7 +16,7 @@ The desktop project uses WPF and cannot run on non-Windows systems. `DiffDesk.Co
 - Open an issue first for large behavior changes so the scope can be agreed upon.
 - Keep changes focused and preserve the separation between UI code and core services.
 - Do not commit `bin/`, `obj/`, `artifacts/`, local settings, backups, credentials, or machine-specific absolute paths.
-- For file operations, preserve clear source/destination semantics, path containment checks, cancellation where applicable, and backup-before-overwrite behavior.
+- For file operations, preserve clear source/destination semantics, path containment checks, confirmation, and cancellation where applicable.
 - For MCP operations, preserve the preview-before-confirm flow for destructive or overwriting actions. Keep stdout reserved for protocol messages.
 - Describe user-visible behavior changes and include screenshots for UI changes when practical.
 - Run the build and relevant existing smoke checks, and include the results in the pull request.

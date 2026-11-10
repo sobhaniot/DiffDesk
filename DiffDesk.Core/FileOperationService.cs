@@ -66,17 +66,16 @@ public sealed class FileOperationService
             $"تغییر نام {Path.GetFileName(source)} به {cleanName}");
     }
 
-    public Task<FileOperationReport> ExecuteAsync(FileOperationPlan plan, string backupRoot, IProgress<ComparisonProgress>? progress = null, CancellationToken cancellationToken = default)
+    public Task<FileOperationReport> ExecuteAsync(FileOperationPlan plan, IProgress<ComparisonProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        return Task.Run(() => ExecuteCore(plan, backupRoot, progress, cancellationToken), cancellationToken);
+        return Task.Run(() => ExecuteCore(plan, progress, cancellationToken), cancellationToken);
     }
 
-    private static FileOperationReport ExecuteCore(FileOperationPlan plan, string backupRoot, IProgress<ComparisonProgress>? progress, CancellationToken cancellationToken)
+    private static FileOperationReport ExecuteCore(FileOperationPlan plan, IProgress<ComparisonProgress>? progress, CancellationToken cancellationToken)
     {
         var errors = new List<string>();
         var completed = 0;
-        string? backupDirectory = null;
 
         for (var index = 0; index < plan.Items.Count; index++)
         {
@@ -88,42 +87,31 @@ public sealed class FileOperationService
                 {
                     case FileOperationKind.Copy:
                         if (item.DestinationPath is null) throw new InvalidOperationException("مقصد کپی مشخص نشده است.");
-                        EnsureBackup(item.DestinationPath, item.RelativePath, backupRoot, ref backupDirectory);
                         Directory.CreateDirectory(Path.GetDirectoryName(item.DestinationPath)!);
-                        if (item.IsDirectory) CopyDirectory(item.SourcePath, item.DestinationPath, backupRoot, item.RelativePath, ref backupDirectory, cancellationToken);
+                        if (item.IsDirectory) CopyDirectory(item.SourcePath, item.DestinationPath, cancellationToken);
                         else CopyFileOverwriting(item.SourcePath, item.DestinationPath);
                         break;
                     case FileOperationKind.Move:
                         if (item.DestinationPath is null) throw new InvalidOperationException("مقصد انتقال مشخص نشده است.");
-                        EnsureBackup(item.DestinationPath, item.RelativePath, backupRoot, ref backupDirectory);
                         Directory.CreateDirectory(Path.GetDirectoryName(item.DestinationPath)!);
                         if (item.IsDirectory)
                         {
-                            CopyDirectory(item.SourcePath, item.DestinationPath, backupRoot, item.RelativePath, ref backupDirectory, cancellationToken);
+                            CopyDirectory(item.SourcePath, item.DestinationPath, cancellationToken);
                             Directory.Delete(item.SourcePath, recursive: true);
                         }
                         else
                         {
                             CopyFileOverwriting(item.SourcePath, item.DestinationPath);
-                            EnsureBackup(item.SourcePath, $"move-source/{item.RelativePath}", backupRoot, ref backupDirectory);
                             ClearReadOnly(item.SourcePath);
                             File.Delete(item.SourcePath);
                         }
                         break;
                     case FileOperationKind.Delete:
-                        EnsureBackup(item.SourcePath, item.RelativePath, backupRoot, ref backupDirectory);
-                        if (item.IsDirectory)
-                        {
-                            foreach (var file in Directory.EnumerateFiles(item.SourcePath, "*", SearchOption.AllDirectories)) ClearReadOnly(file);
-                            foreach (var directory in Directory.EnumerateDirectories(item.SourcePath, "*", SearchOption.AllDirectories)) ClearReadOnly(directory);
-                            ClearReadOnly(item.SourcePath);
-                            Directory.Delete(item.SourcePath, recursive: true);
-                        }
+                        if (item.IsDirectory) DeleteDirectory(new DirectoryInfo(item.SourcePath));
                         else { ClearReadOnly(item.SourcePath); File.Delete(item.SourcePath); }
                         break;
                     case FileOperationKind.Rename:
                         if (item.DestinationPath is null) throw new InvalidOperationException("نام مقصد مشخص نشده است.");
-                        EnsureBackup(item.DestinationPath, item.RelativePath, backupRoot, ref backupDirectory);
                         if (item.DestinationExists) { ClearReadOnly(item.DestinationPath); File.Delete(item.DestinationPath); }
                         File.Move(item.SourcePath, item.DestinationPath);
                         break;
@@ -140,11 +128,32 @@ public sealed class FileOperationService
             progress?.Report(new ComparisonProgress(index + 1, plan.Items.Count, item.RelativePath, "اجرای عملیات"));
         }
 
-        return new FileOperationReport(completed, errors.Count, errors, backupDirectory);
+        return new FileOperationReport(completed, errors.Count, errors);
     }
 
-    private static void CopyDirectory(string source, string destination, string backupRoot, string relativePath,
-        ref string? backupDirectory, CancellationToken cancellationToken)
+    private static void DeleteDirectory(DirectoryInfo directory)
+    {
+        if ((directory.Attributes & FileAttributes.ReparsePoint) == 0)
+        {
+            // Use the paths returned by managed enumeration for each child.
+            foreach (var entry in directory.EnumerateFileSystemInfos().ToArray())
+            {
+                if (entry is DirectoryInfo child)
+                {
+                    DeleteDirectory(child);
+                }
+                else
+                {
+                    ClearReadOnly(entry.FullName);
+                    entry.Delete();
+                }
+            }
+            ClearReadOnly(directory.FullName);
+        }
+        directory.Delete();
+    }
+
+    private static void CopyDirectory(string source, string destination, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(destination);
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
@@ -152,7 +161,6 @@ public sealed class FileOperationService
             cancellationToken.ThrowIfCancellationRequested();
             var relative = Path.GetRelativePath(source, file);
             var target = Path.Combine(destination, relative);
-            EnsureBackup(target, Path.Combine(relativePath, relative), backupRoot, ref backupDirectory);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             CopyFileOverwriting(file, target);
         }
@@ -163,44 +171,26 @@ public sealed class FileOperationService
         }
     }
 
-    private static void EnsureBackup(string path, string relativePath, string backupRoot, ref string? backupDirectory)
-    {
-        if (!File.Exists(path) && !Directory.Exists(path)) return;
-        backupDirectory ??= Path.Combine(backupRoot, DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
-        var safeRelative = relativePath.Replace('/', Path.DirectorySeparatorChar);
-        var backupPath = Path.Combine(backupDirectory, safeRelative);
-        if (Directory.Exists(path))
-        {
-            BackupDirectory(path, backupPath);
-        }
-        else
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(backupPath)!);
-            File.Copy(path, backupPath, overwrite: true);
-        }
-    }
-
-    private static void BackupDirectory(string source, string destination)
-    {
-        Directory.CreateDirectory(destination);
-        foreach (var directory in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
-            Directory.CreateDirectory(Path.Combine(destination, Path.GetRelativePath(source, directory)));
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
-        {
-            var backupFile = Path.Combine(destination, Path.GetRelativePath(source, file));
-            Directory.CreateDirectory(Path.GetDirectoryName(backupFile)!);
-            File.Copy(file, backupFile, overwrite: true);
-        }
-    }
-
     private static void CopyFileOverwriting(string source, string destination)
     {
         var sourceIsReadOnly = (File.GetAttributes(source) & FileAttributes.ReadOnly) != 0;
+        var sourceModified = File.GetLastWriteTimeUtc(source);
         if (File.Exists(destination)) ClearReadOnly(destination);
         File.Copy(source, destination, overwrite: true);
-        var destinationAttributes = File.GetAttributes(destination);
-        if (sourceIsReadOnly) File.SetAttributes(destination, destinationAttributes | FileAttributes.ReadOnly);
-        else if ((destinationAttributes & FileAttributes.ReadOnly) != 0) File.SetAttributes(destination, destinationAttributes & ~FileAttributes.ReadOnly);
+        try
+        {
+            if (File.GetLastWriteTimeUtc(destination) != sourceModified)
+            {
+                ClearReadOnly(destination);
+                File.SetLastWriteTimeUtc(destination, sourceModified);
+            }
+        }
+        finally
+        {
+            var destinationAttributes = File.GetAttributes(destination);
+            if (sourceIsReadOnly) File.SetAttributes(destination, destinationAttributes | FileAttributes.ReadOnly);
+            else if ((destinationAttributes & FileAttributes.ReadOnly) != 0) File.SetAttributes(destination, destinationAttributes & ~FileAttributes.ReadOnly);
+        }
     }
 
     private static void ClearReadOnly(string path)

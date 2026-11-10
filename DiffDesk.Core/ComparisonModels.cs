@@ -17,8 +17,9 @@ public enum DifferenceKind
 
 public sealed record ComparisonOptions
 {
-    public bool CompareContent { get; init; } = true;
-    public bool CompareModifiedTime { get; init; }
+    public bool CompareContent { get; init; }
+    public bool CompareModifiedTime { get; init; } = true;
+    public bool VerifyTimestampDifferencesByContent { get; init; }
     public bool IncludeSubdirectories { get; init; } = true;
     public bool IgnoreNameCase { get; init; } = true;
     public string ExcludePatterns { get; init; } = "bin;obj;.git;*.tmp";
@@ -44,30 +45,42 @@ public sealed record FileComparisonRow(
     public FileSide? ChangedContentSide { get; init; }
     public const string BothVersionsChangedMessage = "هر دو نسخه از زمان ثبت مبنا تغییر کرده‌اند";
     public string DisplayName => $"{(BothVersionsChanged ? "⚠" : IsDirectory ? "▰" : "▪")}  {System.IO.Path.GetFileName(RelativePath)}";
-    public string LeftDisplayName => LeftPath is null ? string.Empty : DisplayName;
-    public string RightDisplayName => RightPath is null ? string.Empty : DisplayName;
+    public string LeftDisplayName => IsVisibleOnSide(FileSide.Left) ? DisplayName : string.Empty;
+    public string RightDisplayName => IsVisibleOnSide(FileSide.Right) ? DisplayName : string.Empty;
+    public long? LeftSizeDisplay => IsVisibleOnSide(FileSide.Left) ? LeftSize : null;
+    public long? RightSizeDisplay => IsVisibleOnSide(FileSide.Right) ? RightSize : null;
+    public DateTime? LeftModifiedDisplay => IsVisibleOnSide(FileSide.Left) ? LeftModified : null;
+    public DateTime? RightModifiedDisplay => IsVisibleOnSide(FileSide.Right) ? RightModified : null;
+    public bool IsLeftVisible => IsVisibleOnSide(FileSide.Left);
+    public bool IsRightVisible => IsVisibleOnSide(FileSide.Right);
+
+    public bool IsVisibleOnSide(FileSide side) =>
+        (side == FileSide.Left ? LeftPath : RightPath) is not null;
+
     public FileSide? NewerSide
     {
         get
         {
-            if (Kind != DifferenceKind.Changed || IsDirectory || BothVersionsChanged || LeftModified is null || RightModified is null || LeftModified == RightModified) return null;
+            if (Kind != DifferenceKind.Changed || BothVersionsChanged) return null;
+            if (IsDirectory) return ChangedContentSide;
+            if (ContentHistoryChecked && ChangedContentSide is { } changedSide) return changedSide;
+            if (LeftModified is null || RightModified is null || LeftModified == RightModified) return null;
             return LeftModified.Value > RightModified.Value ? FileSide.Left : FileSide.Right;
         }
     }
     public bool IsLeftNewer => NewerSide == FileSide.Left;
     public bool IsRightNewer => NewerSide == FileSide.Right;
-    public bool HighlightLeftVersion => (ContentHistoryChecked ? ChangedContentSide : NewerSide) == FileSide.Left;
-    public bool HighlightRightVersion => (ContentHistoryChecked ? ChangedContentSide : NewerSide) == FileSide.Right;
+    public bool HighlightLeftVersion => !IsDirectory && NewerSide == FileSide.Left;
+    public bool HighlightRightVersion => !IsDirectory && NewerSide == FileSide.Right;
     public string LeftVersionHint => VersionHint(FileSide.Left);
     public string RightVersionHint => VersionHint(FileSide.Right);
 
     private string VersionHint(FileSide side)
     {
         if (BothVersionsChanged) return BothVersionsChangedMessage;
-        if (ContentHistoryChecked && Kind == DifferenceKind.Changed)
+        if (ContentHistoryChecked && Kind == DifferenceKind.Changed && ChangedContentSide is not null)
         {
-            if (ChangedContentSide is null) return $"نسخهٔ تغییرکرده مشخص نیست · {RelativePath}";
-            return ChangedContentSide == side ? $"محتوا از زمان ثبت مبنا تغییر کرده است · {RelativePath}" : RelativePath;
+            return ChangedContentSide == side ? $"اندازه یا زمان ویرایش از زمان ثبت مبنا تغییر کرده است · {RelativePath}" : RelativePath;
         }
         return NewerSide is null ? RelativePath : NewerSide == side ? $"نسخهٔ جدیدتر · {RelativePath}" : $"نسخهٔ قدیمی‌تر · {RelativePath}";
     }
@@ -140,4 +153,4 @@ public sealed record FileOperationPlan(FileOperationKind Kind, IReadOnlyList<Fil
     public int OverwriteCount => Items.Count(item => item.DestinationExists);
 }
 
-public sealed record FileOperationReport(int Succeeded, int Failed, IReadOnlyList<string> Errors, string? BackupDirectory);
+public sealed record FileOperationReport(int Succeeded, int Failed, IReadOnlyList<string> Errors);

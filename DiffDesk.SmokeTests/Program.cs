@@ -45,6 +45,13 @@ try
     var rightNewer = leftNewer with { LeftModified = olderStamp, RightModified = newerStamp };
     var equalStamp = leftNewer with { RightModified = newerStamp };
     var changedFolder = leftNewer with { IsDirectory = true };
+    var pairedFolder = changedFolder with { ChangedContentSide = FileSide.Left, HasChildren = true };
+    Assert(pairedFolder.IsLeftVisible && pairedFolder.IsRightVisible && pairedFolder.IsLeftNewer && !pairedFolder.IsRightNewer,
+        "changed folder is visible in both panes with one highlighted side");
+    Assert(leftNewer.LeftDisplayName == leftNewer.RightDisplayName && leftNewer.RightDisplayName.Length > 0 &&
+        leftNewer.RightSizeDisplay == 4 && leftNewer.RightModifiedDisplay == olderStamp &&
+        leftNewer.HighlightLeftVersion && !leftNewer.HighlightRightVersion,
+        "older file retains its name, size and date without a difference highlight");
     Assert(leftNewer.IsLeftNewer && leftNewer.RightVersionHint.Contains("قدیمی‌تر"), "newer left file is identified for directional highlighting");
     Assert(rightNewer.IsRightNewer && rightNewer.LeftVersionHint.Contains("قدیمی‌تر"), "newer right file is identified for directional highlighting");
     Assert(equalStamp.NewerSide is null && changedFolder.NewerSide is null, "equal timestamps and changed folders do not imply a newer file side");
@@ -138,23 +145,21 @@ try
     var operationRow = new FileComparisonRow("source.txt", sourceFile, null, 9, null, null, null, DifferenceKind.LeftOnly);
     var operations = new FileOperationService();
     var copyPlan = operations.CreateCopyPlan([operationRow], FileSide.Left, destinationRoot);
-    var copyResult = await operations.ExecuteAsync(copyPlan, Path.Combine(operationRoot, "backups"));
+    var copyResult = await operations.ExecuteAsync(copyPlan);
     Assert(copyResult.Succeeded == 1 && await File.ReadAllTextAsync(Path.Combine(destinationRoot, "source.txt")) == "new value", "copy operation creates destination file");
 
     var protectedDestination = Path.Combine(destinationRoot, "source.txt");
     await File.WriteAllTextAsync(protectedDestination, "old read-only value");
     File.SetAttributes(protectedDestination, File.GetAttributes(protectedDestination) | FileAttributes.ReadOnly);
     var overwritePlan = operations.CreateCopyPlan([operationRow], FileSide.Left, destinationRoot);
-    var overwriteResult = await operations.ExecuteAsync(overwritePlan, Path.Combine(operationRoot, "backups"));
-    Assert(overwriteResult.Succeeded == 1 && await File.ReadAllTextAsync(protectedDestination) == "new value", "copy overwrites a read-only destination after backing it up");
-    Assert(overwriteResult.BackupDirectory is not null && await File.ReadAllTextAsync(Path.Combine(overwriteResult.BackupDirectory, "source.txt")) == "old read-only value", "copy preserves the previous read-only destination in backup");
-    if (overwriteResult.BackupDirectory is not null) File.SetAttributes(Path.Combine(overwriteResult.BackupDirectory, "source.txt"), FileAttributes.Normal);
+    var overwriteResult = await operations.ExecuteAsync(overwritePlan);
+    Assert(overwriteResult.Succeeded == 1 && await File.ReadAllTextAsync(protectedDestination) == "new value", "copy overwrites a read-only destination");
 
     var sourceFolder = Path.Combine(operationRoot, "folder-source");
     await File.WriteAllTextAsync(Path.Combine(Directory.CreateDirectory(Path.Combine(sourceFolder, "nested")).FullName, "child.txt"), "folder data");
     var folderRow = new FileComparisonRow("folder-source", sourceFolder, null, null, null, null, null, DifferenceKind.LeftOnly, IsDirectory: true);
     var folderCopyPlan = operations.CreateCopyPlan([folderRow], FileSide.Left, destinationRoot);
-    var folderCopyResult = await operations.ExecuteAsync(folderCopyPlan, Path.Combine(operationRoot, "backups"));
+    var folderCopyResult = await operations.ExecuteAsync(folderCopyPlan);
     Assert(folderCopyResult.Succeeded == 1 && await File.ReadAllTextAsync(Path.Combine(destinationRoot, "folder-source", "nested", "child.txt")) == "folder data", "copy operation includes selected folder contents");
 
     var folderChildRow = new FileComparisonRow("folder-source/nested/child.txt", Path.Combine(sourceFolder, "nested", "child.txt"), null, 11, null, null, null, DifferenceKind.LeftOnly, Depth: 2);
@@ -166,22 +171,20 @@ try
     Assert(overlappingCopyPlan.Items.Count == 1 && overlappingCopyPlan.Items[0].IsDirectory, "copying a selected folder subsumes its selected descendants");
     var folderDeletePlan = operations.CreateDeletePlan([folderRow, folderChildRow], FileSide.Left);
     Assert(folderDeletePlan.Items.Count == 1 && folderDeletePlan.Items[0].IsDirectory, "deleting a selected folder subsumes its selected descendants");
-    var folderDeleteResult = await operations.ExecuteAsync(folderDeletePlan, Path.Combine(operationRoot, "backups"));
+    var folderDeleteResult = await operations.ExecuteAsync(folderDeletePlan);
     Assert(folderDeleteResult.Succeeded == 1 && !Directory.Exists(sourceFolder), "delete operation removes the selected folder and its contents");
-    Assert(folderDeleteResult.BackupDirectory is not null && await File.ReadAllTextAsync(Path.Combine(folderDeleteResult.BackupDirectory, "folder-source", "nested", "child.txt")) == "folder data", "delete operation backs up folder contents before removal");
 
     var destinationFile = Path.Combine(destinationRoot, "source.txt");
     var deleteRow = operationRow with { LeftPath = destinationFile, RelativePath = "source.txt" };
     var deletePlan = operations.CreateDeletePlan([deleteRow], FileSide.Left);
-    var deleteResult = await operations.ExecuteAsync(deletePlan, Path.Combine(operationRoot, "backups"));
+    var deleteResult = await operations.ExecuteAsync(deletePlan);
     Assert(deleteResult.Succeeded == 1 && !File.Exists(destinationFile), "delete operation removes the selected file");
-    Assert(deleteResult.BackupDirectory is not null && Directory.Exists(deleteResult.BackupDirectory), "delete operation keeps a recoverable backup");
 
     var renameSource = Path.Combine(operationRoot, "rename-before.txt");
     await File.WriteAllTextAsync(renameSource, "rename me");
     var renameRow = new FileComparisonRow("rename-before.txt", renameSource, null, 9, null, null, null, DifferenceKind.LeftOnly);
     var renamePlan = operations.CreateRenamePlan(renameRow, FileSide.Left, "rename-after.txt");
-    var renameResult = await operations.ExecuteAsync(renamePlan, Path.Combine(operationRoot, "backups"));
+    var renameResult = await operations.ExecuteAsync(renamePlan);
     Assert(renameResult.Succeeded == 1 && File.Exists(Path.Combine(operationRoot, "rename-after.txt")), "rename operation changes the file name");
 
     Console.WriteLine($"Smoke checks passed: {passed}; failed: {failed}");

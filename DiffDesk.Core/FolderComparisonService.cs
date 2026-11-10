@@ -57,6 +57,7 @@ public sealed class FolderComparisonService
         var orderedPaths = allPaths.OrderBy(path => path, new HierarchicalPathComparer(comparer)).ToArray();
         var fileKinds = new Dictionary<string, DifferenceKind>(comparer);
         var changedDirectories = new HashSet<string>(comparer);
+        var directoryChangeTimes = new Dictionary<string, (DateTime? Left, DateTime? Right)>(comparer);
 
         for (var index = 0; index < orderedPaths.Length; index++)
         {
@@ -66,20 +67,43 @@ public sealed class FolderComparisonService
             var hasRightDirectory = rightDirectories.ContainsKey(relative);
             if (hasLeftDirectory || hasRightDirectory)
             {
-                if (hasLeftDirectory != hasRightDirectory) AddAncestorDirectories(relative, changedDirectories);
+                if (hasLeftDirectory != hasRightDirectory)
+                {
+                    var leftModified = hasLeftDirectory ? Directory.GetLastWriteTimeUtc(leftDirectories[relative]) : (DateTime?)null;
+                    var rightModified = hasRightDirectory ? Directory.GetLastWriteTimeUtc(rightDirectories[relative]) : (DateTime?)null;
+                    RecordDirectoryChange(relative, leftModified, rightModified);
+                }
             }
             else
             {
                 leftFiles.TryGetValue(relative, out var leftFile);
                 rightFiles.TryGetValue(relative, out var rightFile);
-                var kind = Classify(leftFile, rightFile, options, cancellationToken);
+                DifferenceKind kind;
+                try
+                {
+                    kind = Classify(leftFile, rightFile, options, cancellationToken);
+                }
+                catch (Exception exception) when (IsFileSystemException(exception))
+                {
+                    kind = DifferenceKind.Error;
+                    issues.Add($"{relative} — {exception.Message}");
+                }
                 fileKinds[relative] = kind;
-                if (kind != DifferenceKind.Identical) AddAncestorDirectories(relative, changedDirectories);
+                if (kind != DifferenceKind.Identical) RecordDirectoryChange(relative, leftFile?.Modified, rightFile?.Modified);
             }
 
             if (index % 16 == 0 || index == orderedPaths.Length - 1)
                 progress?.Report(new ComparisonProgress(index + 1, orderedPaths.Length, relative, "مقایسهٔ محتوا"));
         }
+
+        var directoryChangedSides = directoryChangeTimes.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.Left is null ? FileSide.Right
+                : pair.Value.Right is null ? FileSide.Left
+                : pair.Value.Left > pair.Value.Right ? FileSide.Left
+                : pair.Value.Right > pair.Value.Left ? FileSide.Right
+                : (FileSide?)null,
+            comparer);
 
         var rows = new List<FileComparisonRow>(orderedPaths.Length);
 
@@ -93,10 +117,13 @@ public sealed class FolderComparisonService
                 rightDirectories.TryGetValue(relative, out rightDirectory);
                 var kind = leftDirectory is null ? DifferenceKind.RightOnly : rightDirectory is null ? DifferenceKind.LeftOnly :
                     changedDirectories.Contains(relative) ? DifferenceKind.Changed : DifferenceKind.Identical;
-                rows.Add(new FileComparisonRow(relative, leftDirectory, rightDirectory, null, null,
+                var directoryRow = new FileComparisonRow(relative, leftDirectory, rightDirectory, null, null,
                     leftDirectory is null ? null : Directory.GetLastWriteTimeUtc(leftDirectory),
                     rightDirectory is null ? null : Directory.GetLastWriteTimeUtc(rightDirectory), kind,
-                    IsDirectory: true, Depth: relative.Count(character => character == '/'), HasChildren: pathsWithChildren.Contains(relative)));
+                    IsDirectory: true, Depth: relative.Count(character => character == '/'), HasChildren: pathsWithChildren.Contains(relative));
+                rows.Add(directoryChangedSides.TryGetValue(relative, out var changedSide)
+                    ? directoryRow with { ChangedContentSide = changedSide }
+                    : directoryRow);
             }
             else
             {
@@ -110,6 +137,22 @@ public sealed class FolderComparisonService
         }
 
         return new ComparisonSnapshot(rows, issues, DateTime.UtcNow - started);
+
+        void RecordDirectoryChange(string relativePath, DateTime? leftModified, DateTime? rightModified)
+        {
+            AddAncestorDirectories(relativePath, changedDirectories);
+            var separator = relativePath.LastIndexOf('/');
+            while (separator >= 0)
+            {
+                var parent = relativePath[..separator];
+                directoryChangeTimes.TryGetValue(parent, out var previous);
+                directoryChangeTimes[parent] = (Latest(previous.Left, leftModified), Latest(previous.Right, rightModified));
+                separator = relativePath.LastIndexOf('/', separator - 1);
+            }
+        }
+
+        static DateTime? Latest(DateTime? current, DateTime? candidate) =>
+            current is null || candidate > current ? candidate : current;
     }
 
     private static void AddAncestorDirectories(string relativePath, HashSet<string> changedDirectories)
@@ -236,8 +279,9 @@ public sealed class FolderComparisonService
         if (left is null) return DifferenceKind.RightOnly;
         if (right is null) return DifferenceKind.LeftOnly;
         if (left.Length != right.Length) return DifferenceKind.Changed;
-        if (options.CompareModifiedTime && left.Modified != right.Modified) return DifferenceKind.Changed;
-        if (options.CompareContent && !FilesEqual(left.FullPath, right.FullPath, cancellationToken)) return DifferenceKind.Changed;
+        var timestampDiffers = options.CompareModifiedTime && left.Modified != right.Modified;
+        if (timestampDiffers && !options.VerifyTimestampDifferencesByContent) return DifferenceKind.Changed;
+        if ((options.CompareContent || timestampDiffers) && !FilesEqual(left.FullPath, right.FullPath, cancellationToken)) return DifferenceKind.Changed;
         return DifferenceKind.Identical;
     }
 

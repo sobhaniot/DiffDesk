@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace DiffDesk.Core;
@@ -12,42 +11,44 @@ public sealed class FileChangeHistory(string dataDirectory)
     public async Task<ComparisonSnapshot> TrackAsync(
         ComparisonSnapshot snapshot,
         CancellationToken cancellationToken = default,
-        IProgress<ComparisonProgress>? progress = null)
+        IProgress<ComparisonProgress>? progress = null,
+        bool preferLatestTimestamp = false)
     {
         var history = await LoadAsync(cancellationToken).ConfigureAwait(false);
         var rows = snapshot.Rows.ToArray();
         var issues = snapshot.Issues.ToList();
         var updated = false;
-        var trackableCount = rows.Count(row => !row.IsDirectory && row.LeftPath is not null && row.RightPath is not null);
+        var trackableCount = rows.Count(IsTrackable);
         var completed = 0;
         for (var index = 0; index < rows.Length; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var row = rows[index];
-            if (row.IsDirectory || row.LeftPath is null || row.RightPath is null) continue;
+            if (row.IsDirectory || row.Kind == DifferenceKind.Error || row.LeftPath is null || row.RightPath is null) continue;
 
             var key = PairKey(row.LeftPath, row.RightPath, out var reversed);
             history.TryGetValue(key, out var baseline);
             try
             {
-                var left = await FingerprintAsync(row.LeftPath, cancellationToken).ConfigureAwait(false);
-                var right = await FingerprintAsync(row.RightPath, cancellationToken).ConfigureAwait(false);
+                var left = QuickFingerprint(row.LeftPath);
+                var right = QuickFingerprint(row.RightPath);
+                if (baseline is not null && (!IsQuickFingerprint(baseline.First) || !IsQuickFingerprint(baseline.Second)))
+                    baseline = null; // Rebase legacy content hashes to Beyond Compare-style quick metadata checks.
                 var current = Ordered(left, right, reversed);
-                if (baseline is null || (left == right && current != baseline))
+                if (baseline is null || (row.Kind == DifferenceKind.Identical && current != baseline))
                 {
                     history[key] = current;
                     updated = true;
                 }
-                if (left != right)
+                if (row.Kind == DifferenceKind.Changed)
                 {
                     var leftChanged = baseline is not null && left != (reversed ? baseline.Second : baseline.First);
                     var rightChanged = baseline is not null && right != (reversed ? baseline.First : baseline.Second);
                     rows[index] = row with
                     {
-                        Kind = DifferenceKind.Changed,
                         ContentHistoryChecked = true,
                         BothVersionsChanged = leftChanged && rightChanged,
-                        ChangedContentSide = leftChanged == rightChanged ? null : leftChanged ? FileSide.Left : FileSide.Right
+                        ChangedContentSide = preferLatestTimestamp || leftChanged == rightChanged ? null : leftChanged ? FileSide.Left : FileSide.Right
                     };
                 }
                 else
@@ -77,6 +78,9 @@ public sealed class FileChangeHistory(string dataDirectory)
         }
         return snapshot with { Rows = rows, Issues = issues };
     }
+
+    private static bool IsTrackable(FileComparisonRow row) =>
+        !row.IsDirectory && row.Kind != DifferenceKind.Error && row.LeftPath is not null && row.RightPath is not null;
 
     public async Task<IReadOnlyList<string>> FindOverwriteConflictsAsync(FileOperationPlan plan, CancellationToken cancellationToken = default)
     {
@@ -108,10 +112,10 @@ public sealed class FileChangeHistory(string dataDirectory)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!history.TryGetValue(PairKey(source, destination, out var reversed), out var baseline) || !File.Exists(destination)) return;
-            var sourceHash = await FingerprintAsync(source, cancellationToken).ConfigureAwait(false);
-            if (sourceHash == (reversed ? baseline.Second : baseline.First)) return;
-            var destinationHash = await FingerprintAsync(destination, cancellationToken).ConfigureAwait(false);
-            if (sourceHash != destinationHash && destinationHash != (reversed ? baseline.First : baseline.Second)) conflicts.Add(relative);
+            var sourceFingerprint = QuickFingerprint(source);
+            if (sourceFingerprint == (reversed ? baseline.Second : baseline.First)) return;
+            var destinationFingerprint = QuickFingerprint(destination);
+            if (sourceFingerprint != destinationFingerprint && destinationFingerprint != (reversed ? baseline.First : baseline.Second)) conflicts.Add(relative);
         }
     }
 
@@ -152,9 +156,12 @@ public sealed class FileChangeHistory(string dataDirectory)
         return OperatingSystem.IsWindows() ? fullPath.ToUpperInvariant() : fullPath;
     }
 
-    private static async Task<string> FingerprintAsync(string path, CancellationToken cancellationToken)
+    private static string QuickFingerprint(string path)
     {
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 65536, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        return Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false));
+        var info = new FileInfo(path);
+        info.Refresh();
+        return $"quick-v1:{info.Length}:{info.LastWriteTimeUtc.Ticks}";
     }
+
+    private static bool IsQuickFingerprint(string value) => value.StartsWith("quick-v1:", StringComparison.Ordinal);
 }
